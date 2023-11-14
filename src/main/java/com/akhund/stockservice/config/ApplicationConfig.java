@@ -4,8 +4,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import ru.tinkoff.invest.openapi.OpenApi;
-import ru.tinkoff.invest.openapi.okhttp.OkHttpOpenApi;
+import ru.tinkoff.piapi.core.InvestApi;
+
 
 @Configuration
 @EnableConfigurationProperties({ApiConfig.class})
@@ -14,7 +14,7 @@ public class ApplicationConfig {
     private final ApiConfig apiConfig;
 
     @Bean
-    public OpenApi api() {
-        return new OkHttpOpenApi(System.getenv("ssoToken"), apiConfig.getIsSandboxMode());
+    public InvestApi api() {
+        return InvestApi.createSandbox(System.getenv("ssoToken"));
     }
 }

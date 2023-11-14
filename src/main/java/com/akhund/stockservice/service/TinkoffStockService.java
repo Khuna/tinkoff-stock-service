@@ -2,77 +2,72 @@ package com.akhund.stockservice.service;
 
 import com.akhund.stockservice.dto.*;
 import com.akhund.stockservice.exception.StockNotFoundException;
-import com.akhund.stockservice.model.Currency;
 import com.akhund.stockservice.model.Stock;
 import lombok.RequiredArgsConstructor;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
-import ru.tinkoff.invest.openapi.OpenApi;
-import ru.tinkoff.invest.openapi.model.rest.MarketInstrumentList;
-import ru.tinkoff.invest.openapi.model.rest.Orderbook;
+import ru.tinkoff.piapi.contract.v1.InstrumentShort;
+import ru.tinkoff.piapi.core.InvestApi;
+import static ru.tinkoff.piapi.core.utils.MapperUtils.quotationToBigDecimal;
 
+
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Objects;
-import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 
 @Service
 @RequiredArgsConstructor
 public class TinkoffStockService implements StockService {
 
-    private final OpenApi openApi;
+    private final InvestApi investApi;
 
     @Async
-    public CompletableFuture<MarketInstrumentList> getMarketInstrumentByTicker(String ticker) {
+    public CompletableFuture<List<InstrumentShort>> getMarketInstrumentByTicker(String ticker) {
 
-        var context = openApi.getMarketContext();
-        return context.searchMarketInstrumentsByTicker(ticker);
+        var instrumentsService = investApi.getInstrumentsService();
+        return instrumentsService.findInstrument(ticker);
     }
 
     @Override
-    public Stock getStockByTicker(String ticker) {
+    public StocksDto getStocksByTicker(String ticker) {
 
-        var cf = getMarketInstrumentByTicker(ticker);
-        var list = cf.join().getInstruments();
+        var instrumentsService = investApi.getInstrumentsService();
+        var cf = instrumentsService.findInstrument(ticker);
+        var list = cf.join();
 
         if (list.isEmpty()) {
             throw new StockNotFoundException(String.format("Stock %S not found.", ticker));
         }
 
-        var item = list.get(0);
-        return new Stock(
+        List<Stock> stocks= new ArrayList<>();
+
+        list.forEach(item -> stocks.add(new Stock(
                 item.getTicker(),
                 item.getFigi(),
                 item.getName(),
-                item.getType().getValue(),
-                Currency.valueOf(item.getCurrency().getValue()),
+                item.getInstrumentType(),
                 "TINKOFF"
-        );
+        )));
+
+        return new StocksDto(stocks);
     }
 
     public StocksDto getStocksByTickers(TickersDto tickers) {
 
-        List<CompletableFuture<MarketInstrumentList>> marketInstruments = new ArrayList<>();
+        var instrumentsService = investApi.getInstrumentsService();
+
+        List<CompletableFuture<List<InstrumentShort>>>  instrumentShorts = new ArrayList<>();
         tickers.getTickers()
-                .forEach(ticker -> marketInstruments.add(getMarketInstrumentByTicker(ticker)));
-        List<Stock> stocks = marketInstruments.stream()
+                .forEach(ticker -> instrumentShorts.add(instrumentsService.findInstrument(ticker)));
+        List<Stock> stocks = instrumentShorts.stream()
                 .map(CompletableFuture::join)
-                .map(mi -> {
-                    if (mi.getInstruments().isEmpty()) {
-                        return null;
-                    }
-                    else {
-                        return mi.getInstruments().get(0);
-                    }
-                })
-                .filter(Objects::nonNull)
-                .map(mi -> new Stock(
-                        mi.getTicker(),
-                        mi.getFigi(),
-                        mi.getName(),
-                        mi.getType().getValue(),
-                        Currency.valueOf(mi.getCurrency().getValue()),
+                .flatMap(List::stream)
+                .map(item -> new Stock(
+                        item.getTicker(),
+                        item.getFigi(),
+                        item.getName(),
+                        item.getInstrumentType(),
                         "TINKOFF"
                 ))
                 .toList();
@@ -80,30 +75,41 @@ public class TinkoffStockService implements StockService {
         return new StocksDto(stocks);
     }
 
-    @Async
-    public CompletableFuture<Optional<Orderbook>> getOrderBookByFigi(String figi) {
-        return openApi.getMarketContext()
-                .getMarketOrderbook(figi, 0);
+    public StockPrice getStockPriceByFigi(String figi) {
+
+        var cf = investApi.getMarketDataService().getLastPrices(List.of(figi));
+        var list = cf.join();
+
+        if (list.isEmpty()) {
+            throw new StockNotFoundException(String.format("Figi %S not found.", figi));
+        }
+        else {
+            return new StockPrice(figi, quotationToBigDecimal(list.get(0).getPrice()));
+        }
+
+
     }
 
-    public StocksPricesDto getStocksPrices(FigiesDto figies) {
+    public StocksPricesDto getStocksPricesByFigies(FigiesDto figies) {
 
-        List<CompletableFuture<Optional<Orderbook>>> orderBooks = new ArrayList<>();
+//        List<CompletableFuture<Optional<Orderbook>>> orderBooks = new ArrayList<>();
+//
+//        figies.getFigies()
+//                .forEach(figi -> orderBooks.add(getOrderBookByFigi(figi)));
+//
+//        List<StockPrice> stockPrices = orderBooks.stream()
+//                .map(CompletableFuture::join)
+//                .map(orderbook -> orderbook.orElseThrow(() ->
+//                        new StockNotFoundException("Stock not foumd")
+//                ))
+//                .map(orderbook -> new StockPrice(
+//                        orderbook.getFigi(),
+//                        orderbook.getLastPrice().doubleValue()
+//                ))
+//                .toList();
+//
+//        return new StocksPricesDto(stockPrices);
 
-        figies.getFigies()
-                .forEach(figi -> orderBooks.add(getOrderBookByFigi(figi)));
-
-        List<StockPrice> stockPrices = orderBooks.stream()
-                .map(CompletableFuture::join)
-                .map(orderbook -> orderbook.orElseThrow(() ->
-                        new StockNotFoundException("Stock not foumd")
-                ))
-                .map(orderbook -> new StockPrice(
-                        orderbook.getFigi(),
-                        orderbook.getLastPrice().doubleValue()
-                ))
-                .toList();
-
-        return new StocksPricesDto(stockPrices);
+        return null;
     }
 }

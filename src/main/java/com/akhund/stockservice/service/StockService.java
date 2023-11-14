@@ -1,11 +1,11 @@
 package com.akhund.stockservice.service;
 
 import com.akhund.stockservice.dto.*;
-import com.akhund.stockservice.model.Stock;
 
 public interface StockService {
 
-    Stock getStockByTicker(String ticker);
+    StocksDto getStocksByTicker(String ticker);
     StocksDto getStocksByTickers(TickersDto tickers);
-    StocksPricesDto getStocksPrices(FigiesDto figies);
+    StockPrice getStockPriceByFigi(String figi);
+    StocksPricesDto getStocksPricesByFigies(FigiesDto figies);
 }
